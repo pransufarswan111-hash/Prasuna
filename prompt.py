@@ -17,13 +17,20 @@ a short follow-up that refers back to this, e.g. "and of uk" after
         prompt = f"""
 You are a helpful AI assistant.
 {history_section}
-Answer the user's new question using only the provided context below.
-Use the recent conversation above only to understand what the user is
-referring to -- do not answer from it directly if the context has the
-real answer.
+Using only the provided context below, respond to the user's new
+question:
 
-If the context does not contain the answer, say:
-"I don't have enough information."
+- If the question asks for a specific fact, extract and state that
+  fact clearly.
+- If the question is open-ended or asks for an overview, a summary,
+  or "the latest" on a broad topic (e.g. "latest news"), summarize
+  the relevant points from the context in a clear, well-organized
+  way instead of looking for one single "answer".
+
+Only say "I don't have enough information." if the context is
+genuinely unrelated to what the user is asking about -- do not say
+this just because the context doesn't contain one neat, single-line
+answer.
 
 Provide a clear and well-structured answer.
 

@@ -105,7 +105,7 @@ with st.sidebar:
             <li>🐍 Python</li>
             <li>🎈 Streamlit</li>
         </ul>
-        <div class="sidebar-footer">Prasuna AI • v1.0</div>
+        <div class="sidebar-footer">Prasuna AI • v2.0</div>
     </div>
     """
 
@@ -393,6 +393,16 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
+# Per-session vector store -- kept OUT of the cached `pipeline` object
+# so one browser session's ingested content can never leak into
+# another session's (or another question's) search results.
+if "vector_store" not in st.session_state:
+
+    st.session_state.vector_store = VectorStore(
+        dimension=768
+    )
+
+
 # ============================================================
 # CLEAR BUTTON
 # ============================================================
@@ -411,7 +421,7 @@ if st.button(
             ignore_errors=True
         )
 
-    pipeline.vector_store = VectorStore(
+    st.session_state.vector_store = VectorStore(
         dimension=768
     )
 
@@ -443,7 +453,7 @@ for msg in st.session_state.messages:
 # ============================================================
 
 question = st.chat_input(
-    "Ask anything..."
+    "Try me ..."
 )
 
 
@@ -480,10 +490,29 @@ if question:
         for msg in recent_messages
     )
 
-    # If the new question is short, it's likely an elliptical
-    # follow-up ("and of uk") -- expand it using the previous
-    # question so retrieval/web search has something to work with.
-    if last_user_question and len(question.split()) <= 6:
+    # Only treat the new question as a follow-up when it actually
+    # LOOKS like one -- i.e. it starts with a connector word/phrase
+    # ("and of uk", "what about france", "same for japan"). A
+    # word-count-only check ("<=6 words") wrongly merges genuinely
+    # new short questions too -- e.g. "latest news" after
+    # "teach me russian" would become "teach me russian latest news"
+    # and pull mixed, irrelevant results.
+    followup_starters = (
+        "and ",
+        "also ",
+        "what about",
+        "how about",
+        "same for",
+        "same in",
+        "same with",
+        "&",
+    )
+
+    looks_like_followup = question.strip().lower().startswith(
+        followup_starters
+    )
+
+    if last_user_question and looks_like_followup:
 
         search_question = f"{last_user_question} {question}"
 
@@ -586,7 +615,7 @@ if question:
             # 5. SEARCH EXISTING VECTOR STORE
             # ====================================================
 
-            chunks = pipeline.vector_store.search(
+            chunks = st.session_state.vector_store.search(
                 query_embedding[0],
                 k=3,
                 threshold=0.60,
@@ -601,16 +630,19 @@ if question:
             if not chunks:
 
                 placeholder.markdown(
-                    "🌐 Searching the web..."
+                    "Musing..."
                 )
 
-                pipeline.ingest(
+                # ingest() returns a freshly built VectorStore --
+                # store it in this session only, never on the
+                # shared/cached pipeline object.
+                st.session_state.vector_store = pipeline.ingest(
                     search_question
                 )
 
 
                 placeholder.markdown(
-                    "🧠 Understanding information..."
+                    "🧠 Crystallizing..."
                 )
 
 
@@ -623,12 +655,12 @@ if question:
 
 
                 placeholder.markdown(
-                    "🔍 Finding relevant answers..."
+                    "🔍 Joining the dots..."
                 )
 
 
                 # Search newly created knowledge base
-                chunks = pipeline.vector_store.search(
+                chunks = st.session_state.vector_store.search(
                     query_embedding[0],
                     k=3,
                     threshold=0.60,
@@ -641,7 +673,7 @@ if question:
             # ====================================================
 
             debug_results = (
-                pipeline.vector_store.search_debug(
+                st.session_state.vector_store.search_debug(
                     query_embedding[0],
                     k=3
                 )
@@ -841,6 +873,6 @@ if question:
         )
 
 
-    pipeline.vector_store = VectorStore(
+    st.session_state.vector_store = VectorStore(
         dimension=768
     )

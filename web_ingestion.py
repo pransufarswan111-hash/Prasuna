@@ -25,6 +25,33 @@ class WebIngestion:
         )
 
     # ===================================
+    # Expand vague queries into something
+    # a search engine can actually target
+    # ===================================
+    VAGUE_QUERY_EXPANSIONS = {
+        "news": "top news headlines today",
+        "latest news": "top news headlines today",
+        "today's news": "top news headlines today",
+        "todays news": "top news headlines today",
+        "current news": "top news headlines today",
+        "breaking news": "breaking news headlines today",
+        "weather": "current weather forecast today",
+        "sports news": "top sports news headlines today",
+    }
+
+    def expand_vague_query(self, query):
+
+        normalized = query.strip().lower()
+
+        expanded = self.VAGUE_QUERY_EXPANSIONS.get(normalized)
+
+        if expanded:
+            print(f"[WebIngestion] Expanded vague query {query!r} -> {expanded!r}")
+            return expanded
+
+        return query
+
+    # ===================================
     # Process a single URL (instrumented)
     # ===================================
     def process_url(self, result, query):
@@ -73,8 +100,14 @@ class WebIngestion:
         self.vector_store = VectorStore(dimension=768)
 
         # ---- Search ----
+        # Use an expanded, search-engine-friendly version of vague
+        # queries (e.g. "latest news" -> "top news headlines today"),
+        # but keep ranking chunks against the ORIGINAL query below so
+        # relevance still reflects what the user actually asked.
+        search_term = self.expand_vague_query(query)
+
         t0 = time.perf_counter()
-        results = self.search.search(query, max_results=3)
+        results = self.search.search(search_term, max_results=5)
         stage_times["search"] = time.perf_counter() - t0
         print(f"[TIMING] search: {stage_times['search']:.3f}s -> {len(results)} results")
 
