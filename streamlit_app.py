@@ -105,7 +105,7 @@ with st.sidebar:
             <li>🐍 Python</li>
             <li>🎈 Streamlit</li>
         </ul>
-        <div class="sidebar-footer">Prasuna AI • v1.0</div>
+        <div class="sidebar-footer">Prasuna AI • v2.0</div>
     </div>
     """
 
@@ -443,7 +443,7 @@ for msg in st.session_state.messages:
 # ============================================================
 
 question = st.chat_input(
-    "Ask anything..."
+    "Try Me..."
 )
 
 
@@ -778,7 +778,7 @@ if question:
         else:
 
             placeholder.markdown(
-                "Answering directly..."
+                "Musing ..."
             )
 
             full_answer = ""
