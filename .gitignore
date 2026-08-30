@@ -1,6 +1,14 @@
-.venv/
-__pycache__/
-.env
+# Secrets - never commit these
 .streamlit/secrets.toml
-chroma_db/
+
+# Vector DB (rebuilt at runtime)
+vector_db/
+
+# Python
+__pycache__/
 *.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
