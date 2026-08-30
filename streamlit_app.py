@@ -105,7 +105,7 @@ with st.sidebar:
             <li>🐍 Python</li>
             <li>🎈 Streamlit</li>
         </ul>
-        <div class="sidebar-footer">Prasuna AI • v2.0</div>
+        <div class="sidebar-footer">Prasuna AI • v1.0</div>
     </div>
     """
 
@@ -393,16 +393,6 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
-# Per-session vector store -- kept OUT of the cached `pipeline` object
-# so one browser session's ingested content can never leak into
-# another session's (or another question's) search results.
-if "vector_store" not in st.session_state:
-
-    st.session_state.vector_store = VectorStore(
-        dimension=768
-    )
-
-
 # ============================================================
 # CLEAR BUTTON
 # ============================================================
@@ -421,7 +411,7 @@ if st.button(
             ignore_errors=True
         )
 
-    st.session_state.vector_store = VectorStore(
+    pipeline.vector_store = VectorStore(
         dimension=768
     )
 
@@ -453,7 +443,7 @@ for msg in st.session_state.messages:
 # ============================================================
 
 question = st.chat_input(
-    "Try me ..."
+    "Ask anything..."
 )
 
 
@@ -462,64 +452,6 @@ question = st.chat_input(
 # ============================================================
 
 if question:
-
-    # ========================================================
-    # 0. CAPTURE HISTORY (before this question is appended)
-    # ========================================================
-
-    # Last user question, used to expand short follow-ups like
-    # "and of uk" into something searchable/embeddable.
-    previous_user_questions = [
-        msg["content"]
-        for msg in st.session_state.messages
-        if msg["role"] == "user"
-    ]
-
-    last_user_question = (
-        previous_user_questions[-1]
-        if previous_user_questions
-        else None
-    )
-
-    # Short recent transcript (last 3 exchanges) to give the LLM
-    # conversational context when answering.
-    recent_messages = st.session_state.messages[-6:]
-
-    history_text = "\n".join(
-        f"{msg['role'].capitalize()}: {msg['content']}"
-        for msg in recent_messages
-    )
-
-    # Only treat the new question as a follow-up when it actually
-    # LOOKS like one -- i.e. it starts with a connector word/phrase
-    # ("and of uk", "what about france", "same for japan"). A
-    # word-count-only check ("<=6 words") wrongly merges genuinely
-    # new short questions too -- e.g. "latest news" after
-    # "teach me russian" would become "teach me russian latest news"
-    # and pull mixed, irrelevant results.
-    followup_starters = (
-        "and ",
-        "also ",
-        "what about",
-        "how about",
-        "same for",
-        "same in",
-        "same with",
-        "&",
-    )
-
-    looks_like_followup = question.strip().lower().startswith(
-        followup_starters
-    )
-
-    if last_user_question and looks_like_followup:
-
-        search_question = f"{last_user_question} {question}"
-
-    else:
-
-        search_question = question
-
 
     # ========================================================
     # 1. SHOW USER QUESTION
@@ -561,44 +493,13 @@ if question:
 
 
         # ====================================================
-        # 3.5 DECIDE: DOES THIS NEED A WEB SEARCH AT ALL?
+        # 3b. DECIDE WHETHER RETRIEVAL IS NEEDED
         # ====================================================
 
-        needs_search = router.should_search(search_question)
+        need_retrieval = router.should_search(question)
 
-        if not needs_search:
 
-            # General-knowledge question (e.g. "teach me French",
-            # "capital of India") -- answer directly from the
-            # model's own knowledge instead of forcing it through
-            # web-scraped context, which tends to be thin or
-            # off-target (e.g. marketing copy from a course site).
-
-            with st.expander(
-                "🔎 Retrieved Content",
-                expanded=False
-            ):
-
-                st.caption(
-                    "Answered directly from the model's own "
-                    "knowledge -- no web search was needed for "
-                    "this question."
-                )
-
-            direct_prompt = prompt_builder.build_direct_prompt(
-                question,
-                history_text
-            )
-
-            placeholder.empty()
-
-            def token_generator():
-                for chunk in llm.stream(direct_prompt):
-                    yield chunk.get("message", {}).get("content", "")
-
-            full_answer = st.write_stream(token_generator())
-
-        else:
+        if need_retrieval:
 
             # ====================================================
             # 4. CREATE QUERY EMBEDDING
@@ -606,7 +507,7 @@ if question:
 
             query_embedding = (
                 pipeline.embedder.create_embeddings(
-                    [search_question]
+                    [question]
                 )
             )
 
@@ -615,7 +516,7 @@ if question:
             # 5. SEARCH EXISTING VECTOR STORE
             # ====================================================
 
-            chunks = st.session_state.vector_store.search(
+            chunks = pipeline.vector_store.search(
                 query_embedding[0],
                 k=3,
                 threshold=0.60,
@@ -630,37 +531,34 @@ if question:
             if not chunks:
 
                 placeholder.markdown(
-                    "Musing..."
+                    "🌐 Searching the web..."
                 )
 
-                # ingest() returns a freshly built VectorStore --
-                # store it in this session only, never on the
-                # shared/cached pipeline object.
-                st.session_state.vector_store = pipeline.ingest(
-                    search_question
+                pipeline.ingest(
+                    question
                 )
 
 
                 placeholder.markdown(
-                    "🧠 Crystallizing..."
+                    "🧠 Understanding information..."
                 )
 
 
                 # Re-create query embedding
                 query_embedding = (
                     pipeline.embedder.create_embeddings(
-                        [search_question]
+                        [question]
                     )
                 )
 
 
                 placeholder.markdown(
-                    "🔍 Joining the dots..."
+                    "🔍 Finding relevant answers..."
                 )
 
 
                 # Search newly created knowledge base
-                chunks = st.session_state.vector_store.search(
+                chunks = pipeline.vector_store.search(
                     query_embedding[0],
                     k=3,
                     threshold=0.60,
@@ -673,9 +571,9 @@ if question:
             # ====================================================
 
             debug_results = (
-                st.session_state.vector_store.search_debug(
+                pipeline.vector_store.search_debug(
                     query_embedding[0],
-                    k=3
+                    k=5
                 )
             )
 
@@ -803,8 +701,7 @@ if question:
                 prompt = (
                     prompt_builder.build_prompt(
                         question,
-                        context,
-                        history_text
+                        context
                     )
                 )
 
@@ -819,32 +716,95 @@ if question:
 
             if prompt:
 
-                # placeholder is no longer needed for streaming --
-                # st.write_stream renders directly into the chat message.
-                placeholder.empty()
-
-                def token_generator():
-                    for chunk in llm.stream(prompt):
-                        yield chunk.get("message", {}).get("content", "")
-
-                full_answer = st.write_stream(token_generator())
+                full_answer = ""
 
 
-            # ====================================================
-            # 12. TRUE FAILURE
-            # ====================================================
+                for chunk in llm.stream(
+                    prompt
+                ):
 
-            else:
+                    token = (
+                        chunk
+                        .get("message", {})
+                        .get("content", "")
+                    )
 
-                full_answer = (
-                    "I couldn't find relevant "
-                    "information on that topic."
-                )
+
+                    full_answer += token
+
+
+                    placeholder.markdown(
+                        full_answer + "▌"
+                    )
 
 
                 placeholder.markdown(
                     full_answer
                 )
+
+
+            # ====================================================
+            # 12. FALLBACK TO GENERAL KNOWLEDGE
+            # ====================================================
+
+            else:
+
+                placeholder.markdown(
+                    "No matching web content found — answering from general knowledge..."
+                )
+
+                full_answer = ""
+
+                for chunk in llm.stream(
+                    question
+                ):
+
+                    token = (
+                        chunk
+                        .get("message", {})
+                        .get("content", "")
+                    )
+
+                    full_answer += token
+
+                    placeholder.markdown(
+                        full_answer + "▌"
+                    )
+
+                placeholder.markdown(
+                    full_answer
+                )
+
+        else:
+
+            placeholder.markdown(
+                "Answering directly..."
+            )
+
+            full_answer = ""
+
+            for chunk in llm.stream(
+                question
+            ):
+
+                token = (
+                    chunk
+                    .get("message", {})
+                    .get("content", "")
+                )
+
+                full_answer += token
+
+                placeholder.markdown(
+                    full_answer + "▌"
+                )
+
+            placeholder.markdown(
+                full_answer
+            )
+
+
+
 
 
     # ========================================================
@@ -873,6 +833,6 @@ if question:
         )
 
 
-    st.session_state.vector_store = VectorStore(
+    pipeline.vector_store = VectorStore(
         dimension=768
     )
