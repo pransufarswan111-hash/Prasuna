@@ -105,7 +105,7 @@ with st.sidebar:
             <li>🐍 Python</li>
             <li>🎈 Streamlit</li>
         </ul>
-        <div class="sidebar-footer">Prasuna AI • v2.0</div>
+        <div class="sidebar-footer">Prasuna AI • v1.0</div>
     </div>
     """
 
@@ -443,7 +443,7 @@ for msg in st.session_state.messages:
 # ============================================================
 
 question = st.chat_input(
-    "Try Me..."
+    "Ask anything..."
 )
 
 
@@ -469,6 +469,44 @@ if question:
             "content": question
         }
     )
+
+
+    # ========================================================
+    # 1b. BUILD CONVERSATION HISTORY FOR THE LLM
+    # ========================================================
+
+    MAX_HISTORY_MESSAGES = 20  # last 10 user/assistant turns
+
+    def build_contents(final_text):
+
+        # exclude the question we just appended above -
+        # it gets added back as the final turn below
+        history = st.session_state.messages[:-1]
+
+        history = history[-MAX_HISTORY_MESSAGES:]
+
+        contents = []
+
+        for msg in history:
+
+            role = "model" if msg["role"] == "assistant" else "user"
+
+            contents.append(
+                {
+                    "role": role,
+                    "parts": [{"text": msg["content"]}]
+                }
+            )
+
+        contents.append(
+            {
+                "role": "user",
+                "parts": [{"text": final_text}]
+            }
+        )
+
+        return contents
+
 
 
     # ========================================================
@@ -719,9 +757,18 @@ if question:
                 full_answer = ""
 
 
+                error_message = None
+
                 for chunk in llm.stream(
-                    prompt
+                    build_contents(prompt)
                 ):
+
+                    if chunk.get("error"):
+
+                        error_message = chunk["message"]["content"]
+
+                        break
+
 
                     token = (
                         chunk
@@ -738,9 +785,21 @@ if question:
                     )
 
 
-                placeholder.markdown(
-                    full_answer
-                )
+                if full_answer:
+
+                    placeholder.markdown(
+                        full_answer
+                    )
+
+                else:
+
+                    placeholder.empty()
+
+
+                if error_message:
+
+                    st.warning(error_message)
+
 
 
             # ====================================================
@@ -755,9 +814,17 @@ if question:
 
                 full_answer = ""
 
+                error_message = None
+
                 for chunk in llm.stream(
-                    question
+                    build_contents(question)
                 ):
+
+                    if chunk.get("error"):
+
+                        error_message = chunk["message"]["content"]
+
+                        break
 
                     token = (
                         chunk
@@ -771,21 +838,40 @@ if question:
                         full_answer + "▌"
                     )
 
-                placeholder.markdown(
-                    full_answer
-                )
+                if full_answer:
+
+                    placeholder.markdown(
+                        full_answer
+                    )
+
+                else:
+
+                    placeholder.empty()
+
+                if error_message:
+
+                    st.warning(error_message)
+
 
         else:
 
             placeholder.markdown(
-                "Musing ..."
+                "Answering directly..."
             )
 
             full_answer = ""
 
+            error_message = None
+
             for chunk in llm.stream(
-                question
+                build_contents(question)
             ):
+
+                if chunk.get("error"):
+
+                    error_message = chunk["message"]["content"]
+
+                    break
 
                 token = (
                     chunk
@@ -799,9 +885,19 @@ if question:
                     full_answer + "▌"
                 )
 
-            placeholder.markdown(
-                full_answer
-            )
+            if full_answer:
+
+                placeholder.markdown(
+                    full_answer
+                )
+
+            else:
+
+                placeholder.empty()
+
+            if error_message:
+
+                st.warning(error_message)
 
 
 
@@ -810,6 +906,9 @@ if question:
     # ========================================================
     # 13. SAVE ASSISTANT RESPONSE
     # ========================================================
+
+    if not full_answer:
+        full_answer = "_(No response was generated — please try again.)_"
 
     st.session_state.messages.append(
         {
