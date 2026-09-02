@@ -2,6 +2,7 @@ import base64
 import os
 import shutil
 import textwrap
+import time
 import streamlit as st
 
 from web_ingestion import WebIngestion
@@ -508,6 +509,56 @@ if question:
         return contents
 
 
+    # ========================================================
+    # 1c. STREAM AN ANSWER INTO A PLACEHOLDER, TYPEWRITER-STYLE
+    # ========================================================
+
+    # Gemini can send fairly large bursts of text per chunk, which makes
+    # a naive "one placeholder.markdown() call per chunk" loop feel like
+    # text is being pasted in rather than typed. Slicing each chunk into
+    # small pieces with a tiny delay between UI updates smooths this out
+    # into a real letter-by-letter typing effect, regardless of how big
+    # the underlying chunks are.
+    TYPING_SLICE_SIZE = 3       # characters revealed per UI update
+    TYPING_DELAY_SECONDS = 0.01  # pause between UI updates
+
+    def stream_answer(placeholder, contents):
+
+        full_answer = ""
+        error_message = None
+
+        for chunk in llm.stream(contents):
+
+            if chunk.get("error"):
+
+                error_message = chunk["message"]["content"]
+
+                break
+
+            token = (
+                chunk
+                .get("message", {})
+                .get("content", "")
+            )
+
+            for i in range(0, len(token), TYPING_SLICE_SIZE):
+
+                full_answer += token[i:i + TYPING_SLICE_SIZE]
+
+                placeholder.markdown(full_answer + "▌")
+
+                time.sleep(TYPING_DELAY_SECONDS)
+
+        if full_answer:
+
+            placeholder.markdown(full_answer)
+
+        else:
+
+            placeholder.empty()
+
+        return full_answer, error_message
+
 
     # ========================================================
     # 2. ASSISTANT RESPONSE AREA
@@ -754,47 +805,10 @@ if question:
 
             if prompt:
 
-                full_answer = ""
-
-
-                error_message = None
-
-                for chunk in llm.stream(
+                full_answer, error_message = stream_answer(
+                    placeholder,
                     build_contents(prompt)
-                ):
-
-                    if chunk.get("error"):
-
-                        error_message = chunk["message"]["content"]
-
-                        break
-
-
-                    token = (
-                        chunk
-                        .get("message", {})
-                        .get("content", "")
-                    )
-
-
-                    full_answer += token
-
-
-                    placeholder.markdown(
-                        full_answer + "▌"
-                    )
-
-
-                if full_answer:
-
-                    placeholder.markdown(
-                        full_answer
-                    )
-
-                else:
-
-                    placeholder.empty()
-
+                )
 
                 if error_message:
 
@@ -812,41 +826,10 @@ if question:
                     "No matching web content found — answering from general knowledge..."
                 )
 
-                full_answer = ""
-
-                error_message = None
-
-                for chunk in llm.stream(
+                full_answer, error_message = stream_answer(
+                    placeholder,
                     build_contents(question)
-                ):
-
-                    if chunk.get("error"):
-
-                        error_message = chunk["message"]["content"]
-
-                        break
-
-                    token = (
-                        chunk
-                        .get("message", {})
-                        .get("content", "")
-                    )
-
-                    full_answer += token
-
-                    placeholder.markdown(
-                        full_answer + "▌"
-                    )
-
-                if full_answer:
-
-                    placeholder.markdown(
-                        full_answer
-                    )
-
-                else:
-
-                    placeholder.empty()
+                )
 
                 if error_message:
 
@@ -859,41 +842,10 @@ if question:
                 "Answering directly..."
             )
 
-            full_answer = ""
-
-            error_message = None
-
-            for chunk in llm.stream(
+            full_answer, error_message = stream_answer(
+                placeholder,
                 build_contents(question)
-            ):
-
-                if chunk.get("error"):
-
-                    error_message = chunk["message"]["content"]
-
-                    break
-
-                token = (
-                    chunk
-                    .get("message", {})
-                    .get("content", "")
-                )
-
-                full_answer += token
-
-                placeholder.markdown(
-                    full_answer + "▌"
-                )
-
-            if full_answer:
-
-                placeholder.markdown(
-                    full_answer
-                )
-
-            else:
-
-                placeholder.empty()
+            )
 
             if error_message:
 
